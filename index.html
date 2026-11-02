@@ -1,0 +1,272 @@
+
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Контроль гуртожитку</title>
+
+  <script src="https://unpkg.com/html5-qrcode"></script>
+
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 600px;
+      margin: 20px auto;
+      padding: 16px;
+      background: #f2f5f9;
+      color: #1f2937;
+    }
+
+    h1, h2 { text-align: center; }
+
+    .panel {
+      background: white;
+      padding: 16px;
+      margin-bottom: 16px;
+      border-radius: 14px;
+      box-shadow: 0 2px 8px #00000010;
+    }
+
+    button, input {
+      box-sizing: border-box;
+      width: 100%;
+      padding: 13px;
+      margin: 6px 0;
+      font-size: 16px;
+      border-radius: 8px;
+    }
+
+    button {
+      border: 0;
+      color: white;
+      background: #2457c5;
+    }
+
+    .entry { background: #18794e; }
+    .exit { background: #b42318; }
+    .secondary { background: #64748b; }
+
+    #status {
+      font-weight: bold;
+      text-align: center;
+      overflow-wrap: anywhere;
+    }
+
+    #reader { width: 100%; }
+
+    .event {
+      padding: 10px 0;
+      border-bottom: 1px solid #ddd;
+      overflow-wrap: anywhere;
+    }
+
+    small { color: #64748b; }
+  </style>
+</head>
+
+<body>
+  <h1>Контроль гуртожитку</h1>
+
+  <div class="panel">
+    <h2>1. Сканування квитка</h2>
+    <div id="reader"></div>
+    <p id="status">Натисни кнопку нижче, щоб почати.</p>
+
+    <button onclick="startScanner()">Почати сканування</button>
+    <button class="secondary" onclick="stopScanner()">
+      Зупинити камеру
+    </button>
+
+    <p><b>Або введи код вручну для тесту:</b></p>
+    <input id="manualCode" placeholder="Наприклад, TEST001">
+    <button onclick="useManualCode()">Перевірити код</button>
+  </div>
+
+  <div class="panel">
+    <h2>2. Реєстрація події</h2>
+    <p>Зчитаний код: <b id="code">Ще не зчитано</b></p>
+
+    <button class="entry" onclick="recordEvent('Вхід')">
+      Зареєструвати вхід
+    </button>
+
+    <button class="exit" onclick="recordEvent('Вихід')">
+      Зареєструвати вихід
+    </button>
+  </div>
+
+  <div class="panel">
+    <h2>3. Журнал подій</h2>
+    <div id="history"></div>
+
+    <button onclick="exportCSV()">Завантажити журнал CSV</button>
+    <button class="secondary" onclick="clearHistory()">
+      Очистити тестовий журнал
+    </button>
+  </div>
+
+  <script>
+    let scanner = null;
+    let pendingCode = "";
+
+    function setStatus(message) {
+      document.getElementById("status").textContent = message;
+    }
+
+    function useCode(value) {
+      if (pendingCode) return;
+
+      pendingCode = value.trim();
+      document.getElementById("code").textContent = pendingCode;
+      setStatus("Код зчитано. Вибери вхід або вихід.");
+      stopScanner();
+    }
+
+    function useManualCode() {
+      const value = document.getElementById("manualCode").value.trim();
+
+      if (!value) {
+        setStatus("Спочатку введи тестовий код.");
+        return;
+      }
+
+      useCode(value);
+    }
+
+    function startScanner() {
+      if (scanner || pendingCode) {
+        setStatus("Спочатку заверши поточну операцію.");
+        return;
+      }
+
+      setStatus("Запускаємо камеру...");
+
+      scanner = new Html5QrcodeScanner(
+        "reader",
+        {
+          fps: 10,
+          qrbox: { width: 280, height: 150 }
+        },
+        false
+      );
+
+      scanner.render(
+        (decodedText) => useCode(decodedText),
+        () => {}
+      );
+    }
+
+    function stopScanner() {
+      if (scanner) {
+        const oldScanner = scanner;
+        scanner = null;
+
+        oldScanner.clear().catch(() => {});
+      }
+    }
+
+    function getHistory() {
+      try {
+        return JSON.parse(
+          localStorage.getItem("dormitoryHistory") || "[]"
+        );
+      } catch {
+        return [];
+      }
+    }
+
+    function recordEvent(type) {
+      if (!pendingCode) {
+        setStatus("Спочатку відскануй або введи код квитка.");
+        return;
+      }
+
+      const events = getHistory();
+
+      events.unshift({
+        code: pendingCode,
+        type: type,
+        time: new Date().toLocaleString("uk-UA")
+      });
+
+      localStorage.setItem("dormitoryHistory", JSON.stringify(events));
+
+      pendingCode = "";
+      document.getElementById("code").textContent = "Ще не зчитано";
+      document.getElementById("manualCode").value = "";
+
+      setStatus("Подію «" + type + "» записано.");
+      showHistory();
+    }
+
+    function showHistory() {
+      const history = getHistory();
+      const container = document.getElementById("history");
+
+      container.replaceChildren();
+
+      if (history.length === 0) {
+        container.textContent = "Записів поки немає.";
+        return;
+      }
+
+      history.forEach(event => {
+        const row = document.createElement("div");
+        row.className = "event";
+
+        const title = document.createElement("b");
+        title.textContent = event.type + " — " + event.code;
+
+        const date = document.createElement("div");
+        date.textContent = event.time;
+
+        row.append(title, date);
+        container.appendChild(row);
+      });
+    }
+
+    function exportCSV() {
+      const history = getHistory();
+
+      if (!history.length) {
+        setStatus("Журнал порожній.");
+        return;
+      }
+
+      const rows = [
+        ["Дата і час", "Код квитка", "Подія"],
+        ...history.map(e => [e.time, e.code, e.type])
+      ];
+
+      const csv = "\uFEFF" + rows.map(row =>
+        row.map(value =>
+          '"' + String(value).replace(/"/g, '""') + '"'
+        ).join(";")
+      ).join("\r\n");
+
+      const blob = new Blob([csv], {
+        type: "text/csv;charset=utf-8;"
+      });
+
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "zhurnal_gurtozhytku.csv";
+      link.click();
+
+      URL.revokeObjectURL(url);
+    }
+
+    function clearHistory() {
+      if (!confirm("Видалити весь тестовий журнал?")) return;
+
+      localStorage.removeItem("dormitoryHistory");
+      showHistory();
+      setStatus("Тестовий журнал очищено.");
+    }
+
+    showHistory();
+  </script>
+</body>
+</html>
