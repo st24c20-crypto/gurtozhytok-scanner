@@ -1,0 +1,510 @@
+
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Контроль гуртожитку</title>
+
+  <script src="https://unpkg.com/html5-qrcode"></script>
+
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 600px;
+      margin: 20px auto;
+      padding: 16px;
+      background: #f2f5f9;
+      color: #1f2937;
+    }
+
+    h1, h2 { text-align: center; }
+
+    .panel {
+      background: white;
+      padding: 16px;
+      margin-bottom: 16px;
+      border-radius: 14px;
+      box-shadow: 0 2px 8px #00000010;
+    }
+
+    button, input {
+      box-sizing: border-box;
+      width: 100%;
+      padding: 13px;
+      margin: 6px 0;
+      font-size: 16px;
+      border-radius: 8px;
+    }
+
+    button {
+      border: 0;
+      color: white;
+      background: #2457c5;
+    }
+
+    .entry { background: #18794e; }
+    .exit { background: #b42318; }
+    .secondary { background: #64748b; }
+
+    #status {
+      font-weight: bold;
+      text-align: center;
+      overflow-wrap: anywhere;
+    }
+
+    #reader { width: 100%; }
+
+    .event {
+      padding: 10px 0;
+      border-bottom: 1px solid #ddd;
+      overflow-wrap: anywhere;
+    }
+
+    small { color: #64748b; }
+    .hint { font-size: 14px; line-height: 1.45; color: #475569; }
+    select { box-sizing: border-box; width: 100%; padding: 12px; margin: 6px 0; font-size: 16px; border-radius: 8px; }
+    .student { padding: 8px 0; border-bottom: 1px solid #e2e8f0; }
+  </style>
+</head>
+
+<body>
+  <h1>Контроль гуртожитку</h1>
+
+  <div class="panel">
+    <h2>1. Сканування квитка</h2>
+    <div id="reader"></div>
+    <p id="status">Натисни кнопку нижче, щоб почати.</p>
+
+    <button onclick="startScanner()">Почати сканування камерою</button>
+    <p><b>Або завантаж фото студентського:</b></p>
+    <input id="ticketPhoto" type="file" accept="image/*" onchange="scanPhoto(this)">
+    <p class="hint">Сфотографуй свій студентський при хорошому освітленні, щоб можна було розпізнати штрихкод. Переконайся, що штрихкод чіткий, не розмитий і без відблисків.</p>
+    <button class="secondary" onclick="stopScanner()">
+      Зупинити камеру
+    </button>
+
+    <p><b>Або введи свою серію, номер:</b></p>
+    <input id="manualCode" placeholder="Наприклад, КВ 123456">
+    <button onclick="useManualCode()">Перевірити код</button>
+  </div>
+
+  <div class="panel">
+    <h2>2. Список студенток</h2>
+    <p class="hint">Після першого зчитування прив’яжи код квитка до потрібної студентки. Прив’язка зберігається в цьому браузері.</p>
+    <div id="students"></div>
+    <label for="studentSelect">Студентка для прив’язки поточного коду:</label>
+    <select id="studentSelect">
+      <option value="roman">Романюк Уляна</option>
+      <option value="pohornychna">Погорнична Віра Василівна</option>
+    </select>
+    <button class="secondary" onclick="linkCurrentCode()">Прив’язати зчитаний код до студентки</button>
+  </div>
+
+  <div class="panel">
+    <h2>3. Реєстрація події</h2>
+    <p>Зчитаний код: <b id="code">Ще не зчитано</b></p>
+    <p>Студентка: <b id="studentName">Не визначено</b></p>
+
+    <button class="entry" onclick="recordEvent('Вхід')">
+      Зареєструвати вхід
+    </button>
+
+    <button class="exit" onclick="recordEvent('Вихід')">
+      Зареєструвати вихід
+    </button>
+    <button class="secondary" onclick="resetCurrentCode()">Завершити роботу з цим квитком</button>
+  </div>
+
+  <div class="panel">
+    <h2>4. Журнал подій</h2>
+    <div id="history"></div>
+
+    <button onclick="exportCSV()">Завантажити журнал CSV</button>
+    <button class="secondary" onclick="clearHistory()">
+      Очистити тестовий журнал
+    </button>
+  </div>
+
+  <script>
+    let scanner = null;
+    let pendingCode = "";
+    const students = [
+      { id: "roman", name: "Романюк Уляна" },
+      { id: "pohornychna", name: "Погорнична Віра Василівна" }
+    ];
+
+    function getStudentCodes() {
+      try {
+        return JSON.parse(localStorage.getItem("dormitoryStudentCodes") || "{}");
+      } catch {
+        return {};
+      }
+    }
+
+    function renderStudents() {
+      const codes = getStudentCodes();
+      const container = document.getElementById("students");
+      container.replaceChildren();
+      students.forEach(student => {
+        const row = document.createElement("div");
+        row.className = "student";
+        const name = document.createElement("b");
+        name.textContent = student.name;
+        const code = document.createElement("div");
+        code.textContent = codes[student.id] ? "Код прив’язано" : "Код ще не прив’язано";
+        row.append(name, code);
+        container.appendChild(row);
+      });
+      updateCurrentStudentName();
+    }
+
+    function getStudentName(code) {
+      const codes = getStudentCodes();
+      const match = students.find(student => codes[student.id] === code);
+      return match ? match.name : "Не визначено — прив’яжи код у списку студенток";
+    }
+
+    function updateCurrentStudentName() {
+      const nameEl = document.getElementById("studentName");
+      if (nameEl) nameEl.textContent = pendingCode ? getStudentName(pendingCode) : "Не визначено";
+    }
+
+    function linkCurrentCode() {
+      if (!pendingCode) {
+        setStatus("Спочатку зчитай штрихкод студентського.");
+        return;
+      }
+      const studentId = document.getElementById("studentSelect").value;
+      const codes = getStudentCodes();
+      const other = students.find(s => s.id !== studentId && codes[s.id] === pendingCode);
+      if (other) {
+        setStatus("Цей код уже прив’язаний до іншої студентки. Перевір вибір.");
+        return;
+      }
+      codes[studentId] = pendingCode;
+      try {
+        localStorage.setItem("dormitoryStudentCodes", JSON.stringify(codes));
+        setStatus("Код прив’язано. Тепер можна реєструвати вхід або вихід.");
+        renderStudents();
+      } catch (error) {
+        console.error("Помилка збереження прив’язки:", error);
+        setStatus("Не вдалося зберегти прив’язку в цьому браузері.");
+      }
+    }
+
+    function setStatus(message) {
+      document.getElementById("status").textContent = message;
+    }
+
+    function useCode(value) {
+      if (pendingCode) return;
+
+      pendingCode = value.trim();
+      document.getElementById("code").textContent = pendingCode;
+      updateCurrentStudentName();
+      setStatus("Код зчитано. Перевір студентку або прив’яжи код, потім вибери вхід чи вихід.");
+      stopScanner();
+    }
+
+    function useManualCode() {
+      const value = document.getElementById("manualCode").value.trim();
+
+      if (!value) {
+        setStatus("Спочатку введи тестовий код.");
+        return;
+      }
+
+      useCode(value);
+    }
+
+    const barcodeFormats = [
+      Html5QrcodeSupportedFormats.CODE_128,
+      Html5QrcodeSupportedFormats.CODE_39,
+      Html5QrcodeSupportedFormats.CODE_93,
+      Html5QrcodeSupportedFormats.EAN_13,
+      Html5QrcodeSupportedFormats.EAN_8,
+      Html5QrcodeSupportedFormats.ITF,
+      Html5QrcodeSupportedFormats.CODABAR,
+      Html5QrcodeSupportedFormats.UPC_A,
+      Html5QrcodeSupportedFormats.UPC_E
+    ];
+
+    function startScanner() {
+      if (scanner || pendingCode) {
+        setStatus("Спочатку заверши поточну операцію.");
+        return;
+      }
+
+      setStatus("Запускаємо камеру...");
+      scanner = new Html5QrcodeScanner(
+        "reader",
+        {
+          fps: 10,
+          formatsToSupport: barcodeFormats,
+          qrbox: function(viewfinderWidth, viewfinderHeight) {
+            return {
+              width: Math.min(viewfinderWidth - 20, 300),
+              height: Math.min(viewfinderHeight - 20, 220)
+            };
+          }
+        },
+        false
+      );
+
+      scanner.render(
+        (decodedText) => useCode(decodedText),
+        () => {}
+      );
+    }
+
+    function stopScanner() {
+      if (scanner) {
+        const oldScanner = scanner;
+        scanner = null;
+        try {
+          oldScanner.clear().catch(() => {});
+        } catch (_) {}
+      }
+    }
+
+    async function scanPhoto(input) {
+      const file = input.files && input.files[0];
+      if (!file) return;
+
+      if (pendingCode) {
+        setStatus("Спочатку заверши поточну операцію входу або виходу.");
+        input.value = "";
+        return;
+      }
+
+      if (!file.type.startsWith("image/")) {
+        setStatus("Будь ласка, вибери файл із фотографією.");
+        input.value = "";
+        return;
+      }
+
+      stopScanner();
+      setStatus("Обробляємо фото та шукаємо штрихкод…");
+
+      if (typeof Html5Qrcode === "undefined") {
+        setStatus("Не вдалося завантажити модуль сканування. Перевір підключення до інтернету та онови сторінку.");
+        input.value = "";
+        return;
+      }
+
+      const reader = new Html5Qrcode("reader", {
+        formatsToSupport: barcodeFormats,
+        verbose: false
+      });
+
+      let bitmap = null;
+
+      function canvasBlob(canvas) {
+        return new Promise((resolve, reject) => {
+          canvas.toBlob(blob => {
+            if (blob) resolve(blob);
+            else reject(new Error("Не вдалося підготувати зображення."));
+          }, "image/jpeg", 0.98);
+        });
+      }
+
+      async function scanCanvas(canvas) {
+        // Збільшуємо невеликі ділянки: це допомагає з вузькими штрихкодами.
+        const enlarged = document.createElement("canvas");
+        const scale = Math.max(1, Math.min(3, 1400 / Math.max(canvas.width, canvas.height)));
+        enlarged.width = Math.round(canvas.width * scale);
+        enlarged.height = Math.round(canvas.height * scale);
+        const ctx = enlarged.getContext("2d");
+        if (!ctx) throw new Error("Не вдалося обробити зображення.");
+        ctx.imageSmoothingEnabled = false;
+        ctx.drawImage(canvas, 0, 0, enlarged.width, enlarged.height);
+        return await reader.scanFile(await canvasBlob(enlarged), false);
+      }
+
+      function makeRotatedCanvas(source, angle) {
+        const sideways = angle === 90 || angle === 270;
+        const canvas = document.createElement("canvas");
+        canvas.width = sideways ? source.height : source.width;
+        canvas.height = sideways ? source.width : source.height;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) throw new Error("Не вдалося обробити зображення.");
+        ctx.translate(canvas.width / 2, canvas.height / 2);
+        ctx.rotate(angle * Math.PI / 180);
+        ctx.drawImage(source, -source.width / 2, -source.height / 2);
+        return canvas;
+      }
+
+      function cropCanvas(source, x, y, width, height) {
+        const crop = document.createElement("canvas");
+        crop.width = Math.max(1, Math.round(width));
+        crop.height = Math.max(1, Math.round(height));
+        const ctx = crop.getContext("2d");
+        if (!ctx) throw new Error("Не вдалося вирізати штрихкод.");
+        ctx.drawImage(source, x, y, width, height, 0, 0, crop.width, crop.height);
+        return crop;
+      }
+
+      try {
+        bitmap = await createImageBitmap(file);
+        let result = "";
+
+        // Перевіряємо повне фото в чотирьох орієнтаціях.
+        for (const angle of [0, 90, 270, 180]) {
+          const oriented = makeRotatedCanvas(bitmap, angle);
+          try {
+            result = await scanCanvas(oriented);
+            if (result) break;
+          } catch (_) {}
+
+          // Додатково перевіряємо вузькі ділянки з усіх чотирьох боків.
+          const w = oriented.width;
+          const h = oriented.height;
+          const crops = [
+            cropCanvas(oriented, 0, 0, w * 0.42, h),
+            cropCanvas(oriented, w * 0.58, 0, w * 0.42, h),
+            cropCanvas(oriented, 0, 0, w, h * 0.42),
+            cropCanvas(oriented, 0, h * 0.58, w, h * 0.42),
+            cropCanvas(oriented, w * 0.2, h * 0.2, w * 0.6, h * 0.6)
+          ];
+
+          for (const crop of crops) {
+            try {
+              result = await scanCanvas(crop);
+              if (result) break;
+            } catch (_) {}
+          }
+          if (result) break;
+        }
+
+        if (result) {
+          useCode(result);
+        } else {
+          setStatus("Штрихкод не вдалося розпізнати автоматично. Спробуй обрізати фото так, щоб у кадрі був переважно штрихкод, або введи серію та номер вручну.");
+        }
+      } catch (error) {
+        console.error("Помилка розпізнавання фото:", error);
+        setStatus("Не вдалося обробити фото. Спробуй вибрати інше зображення або введи серію та номер вручну.");
+      } finally {
+        if (bitmap) bitmap.close();
+        input.value = "";
+        try { await reader.clear(); } catch (_) {}
+      }
+    }
+
+    function getHistory() {
+      try {
+        return JSON.parse(
+          localStorage.getItem("dormitoryHistory") || "[]"
+        );
+      } catch {
+        return [];
+      }
+    }
+
+    function recordEvent(type) {
+      if (!pendingCode) {
+        setStatus("Спочатку відскануй студентський або введи серію та номер.");
+        return;
+      }
+
+      try {
+        const events = getHistory();
+        events.unshift({
+          code: pendingCode,
+          student: getStudentName(pendingCode),
+          type: type,
+          time: new Date().toLocaleString("uk-UA")
+        });
+
+        localStorage.setItem("dormitoryHistory", JSON.stringify(events));
+        showHistory();
+        setStatus("Подію «" + type + "» успішно записано в журнал.");
+
+        // Залишаємо зчитаний квиток активним, щоб можна було
+        // зареєструвати і вхід, і вихід без повторного сканування.
+      } catch (error) {
+        console.error("Помилка збереження події:", error);
+        setStatus("Не вдалося зберегти подію. Перевір, чи дозволене збереження даних у браузері.");
+      }
+    }
+
+    function resetCurrentCode() {
+      pendingCode = "";
+      document.getElementById("code").textContent = "Ще не зчитано";
+      document.getElementById("studentName").textContent = "Не визначено";
+      document.getElementById("manualCode").value = "";
+      setStatus("Поточний квиток очищено. Можна сканувати наступний.");
+    }
+
+    function showHistory() {
+      const history = getHistory();
+      const container = document.getElementById("history");
+
+      container.replaceChildren();
+
+      if (history.length === 0) {
+        container.textContent = "Записів поки немає.";
+        return;
+      }
+
+      history.forEach(event => {
+        const row = document.createElement("div");
+        row.className = "event";
+
+        const title = document.createElement("b");
+        title.textContent = event.type + " — " + (event.student || "Студентка не визначена") + " (" + event.code + ")";
+
+        const date = document.createElement("div");
+        date.textContent = event.time;
+
+        row.append(title, date);
+        container.appendChild(row);
+      });
+    }
+
+    function exportCSV() {
+      const history = getHistory();
+
+      if (!history.length) {
+        setStatus("Журнал порожній.");
+        return;
+      }
+
+      const rows = [
+        ["Дата і час", "Студентка", "Код квитка", "Подія"],
+        ...history.map(e => [e.time, e.student || "Не визначено", e.code, e.type])
+      ];
+
+      const csv = "\uFEFF" + rows.map(row =>
+        row.map(value =>
+          '"' + String(value).replace(/"/g, '""') + '"'
+        ).join(";")
+      ).join("\r\n");
+
+      const blob = new Blob([csv], {
+        type: "text/csv;charset=utf-8;"
+      });
+
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "zhurnal_gurtozhytku.csv";
+      link.click();
+
+      setTimeout(() => URL.revokeObjectURL(url), 2000);
+    }
+
+    function clearHistory() {
+      if (!confirm("Видалити весь тестовий журнал?")) return;
+
+      localStorage.removeItem("dormitoryHistory");
+      showHistory();
+      setStatus("Тестовий журнал очищено.");
+    }
+
+    showHistory();
+    renderStudents();
+  </script>
+</body>
+</html>
