@@ -53,7 +53,22 @@
       overflow-wrap: anywhere;
     }
 
-    #reader { width: 100%; }
+    #reader { width: 100%; margin: 10px 0; overflow: hidden; border-radius: 10px; }
+    #reader video { width: 100% !important; border-radius: 10px; }
+    .upload-label {
+      display: block;
+      box-sizing: border-box;
+      width: 100%;
+      padding: 13px;
+      margin: 8px 0;
+      border-radius: 8px;
+      background: #e8eefc;
+      color: #1947a8;
+      text-align: center;
+      font-weight: bold;
+      cursor: pointer;
+    }
+    #ticketPhoto { display: none; }
 
     .event {
       padding: 10px 0;
@@ -77,8 +92,8 @@
     <p id="status">Натисни кнопку нижче, щоб почати.</p>
 
     <button onclick="startScanner()">Почати сканування камерою</button>
-    <p><b>Або завантаж фото студентського:</b></p>
-    <input id="ticketPhoto" type="file" accept="image/*" onchange="scanPhoto(this)">
+    <label class="upload-label" for="ticketPhoto">Завантажити фото студентського</label>
+    <input id="ticketPhoto" type="file" accept="image/*" capture="environment" onchange="scanPhoto(this)">
     <p class="hint">Сфотографуй свій студентський при хорошому освітленні, щоб можна було розпізнати штрихкод. Переконайся, що штрихкод чіткий, не розмитий і без відблисків.</p>
     <button class="secondary" onclick="stopScanner()">
       Зупинити камеру
@@ -230,41 +245,46 @@
       Html5QrcodeSupportedFormats.UPC_E
     ];
 
-    function startScanner() {
+    async function startScanner() {
       if (scanner || pendingCode) {
-        setStatus("Спочатку заверши поточну операцію.");
+        setStatus("Спочатку заверши поточну операцію або зупини камеру.");
+        return;
+      }
+      if (typeof Html5Qrcode === "undefined") {
+        setStatus("Не вдалося завантажити сканер. Перевір підключення до інтернету.");
         return;
       }
 
-      setStatus("Запускаємо камеру...");
-      scanner = new Html5QrcodeScanner(
-        "reader",
-        {
-          fps: 10,
-          formatsToSupport: barcodeFormats,
-          qrbox: function(viewfinderWidth, viewfinderHeight) {
-            return {
-              width: Math.min(viewfinderWidth - 20, 300),
-              height: Math.min(viewfinderHeight - 20, 220)
-            };
-          }
-        },
-        false
-      );
-
-      scanner.render(
-        (decodedText) => useCode(decodedText),
-        () => {}
-      );
+      setStatus("Запитуємо дозвіл на камеру…");
+      scanner = new Html5Qrcode("reader", {
+        formatsToSupport: barcodeFormats,
+        verbose: false
+      });
+      try {
+        await scanner.start(
+          { facingMode: "environment" },
+          { fps: 10, qrbox: { width: 280, height: 180 }, aspectRatio: 1.777 },
+          decodedText => useCode(decodedText),
+          () => {}
+        );
+        setStatus("Камера працює. Наведи її на штрихкод студентського.");
+      } catch (error) {
+        console.error("Помилка запуску камери:", error);
+        scanner = null;
+        setStatus("Не вдалося запустити камеру. Дозволь доступ до камери в браузері або завантаж фото студентського.");
+      }
     }
 
-    function stopScanner() {
+    async function stopScanner() {
       if (scanner) {
         const oldScanner = scanner;
         scanner = null;
         try {
-          oldScanner.clear().catch(() => {});
-        } catch (_) {}
+          if (oldScanner.isScanning) await oldScanner.stop();
+          await oldScanner.clear();
+        } catch (error) {
+          console.warn("Не вдалося повністю зупинити камеру:", error);
+        }
       }
     }
 
