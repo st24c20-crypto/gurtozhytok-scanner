@@ -132,10 +132,11 @@
         <input id="fRoom" placeholder="Кімната">
         <input id="fBar" placeholder="Штрихкод студентського">
         <div id="readerStaff"></div>
-        <p id="sStatus" class="hint"></p>
-        <div class="row"><button class="secondary" onclick="startScanner()">Сканувати камерою</button><button class="secondary" onclick="stopScanner()">Зупинити камеру</button></div>
-        <label class="upload-label" for="ticketPhotoS">Завантажити фото штрихкоду</label>
+        <button onclick="startScanner()">Почати сканування камерою</button>
+        <label class="upload-label" for="ticketPhotoS">Завантажити фото студентського</label>
         <input id="ticketPhotoS" type="file" accept="image/*" capture="environment" onchange="scanPhoto(this)" style="display:none">
+        <button class="secondary" onclick="stopScanner()">Зупинити камеру</button>
+        <p id="sStatus" class="hint"></p>
         <input id="fSerS" placeholder="Серія студентського (наприклад, КВ)">
         <input id="fSerN" placeholder="Номер студентського (наприклад, 123456)">
         <div class="row"><button onclick="saveStudent()">Зберегти</button><button class="secondary" onclick="clearForm()">Очистити</button></div>
