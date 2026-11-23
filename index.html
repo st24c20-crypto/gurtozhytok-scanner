@@ -1,13 +1,6 @@
-
-<!DOCTYPE html>
-<html lang="uk">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Контроль гуртожитку</title>
-
-  <script src="https://unpkg.com/html5-qrcode"></script>
-
+<!DOCTYPE html><html lang="uk"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Контроль гуртожитку</title>
+<script src="https://unpkg.com/html5-qrcode"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <style>
     body {
       font-family: Arial, sans-serif;
@@ -81,158 +74,147 @@
     select { box-sizing: border-box; width: 100%; padding: 12px; margin: 6px 0; font-size: 16px; border-radius: 8px; }
     .student { padding: 8px 0; border-bottom: 1px solid #e2e8f0; }
   </style>
+<style>
+  [hidden]{display:none!important}
+  .row{display:flex;gap:8px}.row button{width:auto;flex:1}
+  .tab{background:#94a3b8}.tab.active{background:#2457c5}
+  .err{color:#b42318;font-weight:bold;text-align:center}
+  body{max-width:700px}
+</style>
 </head>
-
 <body>
   <h1>Контроль гуртожитку</h1>
-
-  <div class="panel">
-    <h2>1. Сканування квитка</h2>
-    <div id="reader"></div>
-    <p id="status">Натисни кнопку нижче, щоб почати.</p>
-
-    <button onclick="startScanner()">Почати сканування камерою</button>
-    <label class="upload-label" for="ticketPhoto">Завантажити фото студентського</label>
-    <input id="ticketPhoto" type="file" accept="image/*" capture="environment" onchange="scanPhoto(this)">
-    <p class="hint">Сфотографуй свій студентський при хорошому освітленні, щоб можна було розпізнати штрихкод. Переконайся, що штрихкод чіткий, не розмитий і без відблисків.</p>
-    <button class="secondary" onclick="stopScanner()">
-      Зупинити камеру
-    </button>
-
-    <p><b>Або введи свою серію, номер:</b></p>
-    <input id="manualCode" placeholder="Наприклад, КВ 123456">
-    <button onclick="useManualCode()">Перевірити код</button>
+  <div class="row">
+    <button id="tabS" class="tab active" onclick="showTab('student')">Простір студента</button>
+    <button id="tabT" class="tab" onclick="showTab('staff')">Простір вихователя</button>
   </div>
 
-  <div class="panel">
-    <h2>2. Список студенток</h2>
-    <p class="hint">Після першого зчитування прив’яжи код квитка до потрібної студентки. Прив’язка зберігається в цьому браузері.</p>
-    <div id="students"></div>
-    <label for="studentSelect">Студентка для прив’язки поточного коду:</label>
-    <select id="studentSelect">
-      <option value="roman">Романюк Уляна</option>
-      <option value="pohornychna">Погорнична Віра Василівна</option>
-    </select>
-    <button class="secondary" onclick="linkCurrentCode()">Прив’язати зчитаний код до студентки</button>
+  <div id="studentView">
+    <div class="panel" id="loginBox">
+      <h2>Вхід до кабінету</h2>
+      <div id="reader"></div>
+      <button onclick="startScanner()">Почати сканування камерою</button>
+      <label class="upload-label" for="ticketPhoto">Завантажити фото студентського</label>
+      <input id="ticketPhoto" type="file" accept="image/*" capture="environment" onchange="scanPhoto(this)">
+      <p class="hint">Сфотографуй студентський при хорошому освітленні: штрихкод має бути чітким, без відблисків.</p>
+      <button class="secondary" onclick="stopScanner()">Зупинити камеру</button>
+      <p><b>Або введи серію і номер:</b></p>
+      <input id="manualCode" placeholder="Наприклад, КВ 123456">
+      <button onclick="useManualCode()">Увійти</button>
+    </div>
+    <div class="panel" id="cabinet" hidden>
+      <h2>Мій кабінет</h2>
+      <p id="info"></p>
+      <button class="entry" onclick="mark('Вхід')">Зареєструвати вхід</button>
+      <button class="exit" onclick="mark('Вихід')">Зареєструвати вихід</button>
+      <h2>Моя історія</h2>
+      <div id="myHistory"></div>
+      <button class="secondary" onclick="closeCabinet()">Вийти з кабінету</button>
+    </div>
+    <p id="status" class="panel">Натисни кнопку вище, щоб почати.</p>
   </div>
 
-  <div class="panel">
-    <h2>3. Реєстрація події</h2>
-    <p>Зчитаний код: <b id="code">Ще не зчитано</b></p>
-    <p>Студентка: <b id="studentName">Не визначено</b></p>
-
-    <button class="entry" onclick="recordEvent('Вхід')">
-      Зареєструвати вхід
-    </button>
-
-    <button class="exit" onclick="recordEvent('Вихід')">
-      Зареєструвати вихід
-    </button>
-    <button class="secondary" onclick="resetCurrentCode()">Завершити роботу з цим квитком</button>
-  </div>
-
-  <div class="panel">
-    <h2>4. Журнал подій</h2>
-    <div id="history"></div>
-
-    <button onclick="exportCSV()">Завантажити журнал CSV</button>
-    <button class="secondary" onclick="clearHistory()">
-      Очистити тестовий журнал
-    </button>
+  <div id="staffView" hidden>
+    <div class="panel" id="staffLogin">
+      <h2>Вхід вихователя</h2>
+      <input id="sEmail" type="email" placeholder="Пошта">
+      <input id="sPass" type="password" placeholder="Пароль">
+      <button onclick="staffLogin()">Увійти</button>
+      <p id="sMsg" class="err"></p>
+    </div>
+    <div id="staffPanel" hidden>
+      <button class="secondary" onclick="staffLogout()">Вийти</button>
+      <div class="panel">
+        <h2 id="formTitle">Додати студента</h2>
+        <input type="hidden" id="fId">
+        <input id="fName" placeholder="Прізвище, ім’я, по батькові">
+        <input id="fGrp" placeholder="Група">
+        <input id="fRoom" placeholder="Кімната">
+        <input id="fBar" placeholder="Штрихкод студентського">
+        <input id="fSerS" placeholder="Серія студентського (наприклад, КВ)">
+        <input id="fSerN" placeholder="Номер студентського (наприклад, 123456)">
+        <div class="row"><button onclick="saveStudent()">Зберегти</button><button class="secondary" onclick="clearForm()">Очистити</button></div>
+      </div>
+      <div class="panel">
+        <h2>Список студентів</h2>
+        <input id="search" placeholder="Пошук за прізвищем" oninput="renderStudents()">
+        <div id="studentList"></div>
+      </div>
+      <div class="panel">
+        <h2>Журнал входів і виходів</h2>
+        <select id="period" onchange="loadEvents()">
+          <option value="day">За сьогодні</option><option value="week">За тиждень</option><option value="month">За місяць</option>
+        </select>
+        <div id="eventList"></div>
+        <button onclick="exportCSV()">Завантажити звіт CSV</button>
+      </div>
+    </div>
   </div>
 
   <script>
-    let scanner = null;
-    let pendingCode = "";
-    const students = [
-      { id: "roman", name: "Романюк Уляна" },
-      { id: "pohornychna", name: "Погорнична Віра Василівна" }
-    ];
+    const SUPABASE_URL = "https://fsktogehowcsvoozhgze.supabase.co";
+    const SUPABASE_KEY = "sb_publishable_DBkfYvnTUBuypfcmg8Qjlw_bg1E4KNa";
+    const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-    function getStudentCodes() {
-      try {
-        return JSON.parse(localStorage.getItem("dormitoryStudentCodes") || "{}");
-      } catch {
-        return {};
-      }
+    let scanner = null, pendingCode = "", busy = false;
+    let allStudents = [], allEvents = [];
+    const $ = id => document.getElementById(id);
+    const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+    const fmt = d => new Date(d).toLocaleString("uk-UA");
+    const norm = v => (v || "").replace(/\s/g, "").toUpperCase();
+    function setStatus(m) { $("status").textContent = m; }
+
+    function showTab(t) {
+      $("studentView").hidden = t !== "student";
+      $("staffView").hidden = t !== "staff";
+      $("tabS").classList.toggle("active", t === "student");
+      $("tabT").classList.toggle("active", t === "staff");
+      if (t === "staff") staffInit(); else stopScanner();
     }
 
-    function renderStudents() {
-      const codes = getStudentCodes();
-      const container = document.getElementById("students");
-      container.replaceChildren();
-      students.forEach(student => {
-        const row = document.createElement("div");
-        row.className = "student";
-        const name = document.createElement("b");
-        name.textContent = student.name;
-        const code = document.createElement("div");
-        code.textContent = codes[student.id] ? "Код прив’язано" : "Код ще не прив’язано";
-        row.append(name, code);
-        container.appendChild(row);
-      });
-      updateCurrentStudentName();
-    }
-
-    function getStudentName(code) {
-      const codes = getStudentCodes();
-      const match = students.find(student => codes[student.id] === code);
-      return match ? match.name : "Не визначено — прив’яжи код у списку студенток";
-    }
-
-    function updateCurrentStudentName() {
-      const nameEl = document.getElementById("studentName");
-      if (nameEl) nameEl.textContent = pendingCode ? getStudentName(pendingCode) : "Не визначено";
-    }
-
-    function linkCurrentCode() {
-      if (!pendingCode) {
-        setStatus("Спочатку зчитай штрихкод студентського.");
-        return;
-      }
-      const studentId = document.getElementById("studentSelect").value;
-      const codes = getStudentCodes();
-      const other = students.find(s => s.id !== studentId && codes[s.id] === pendingCode);
-      if (other) {
-        setStatus("Цей код уже прив’язаний до іншої студентки. Перевір вибір.");
-        return;
-      }
-      codes[studentId] = pendingCode;
-      try {
-        localStorage.setItem("dormitoryStudentCodes", JSON.stringify(codes));
-        setStatus("Код прив’язано. Тепер можна реєструвати вхід або вихід.");
-        renderStudents();
-      } catch (error) {
-        console.error("Помилка збереження прив’язки:", error);
-        setStatus("Не вдалося зберегти прив’язку в цьому браузері.");
-      }
-    }
-
-    function setStatus(message) {
-      document.getElementById("status").textContent = message;
-    }
-
+    /* ---------- ПРОСТІР СТУДЕНТА ---------- */
     function useCode(value) {
-      if (pendingCode) return;
-
-      pendingCode = value.trim();
-      document.getElementById("code").textContent = pendingCode;
-      updateCurrentStudentName();
-      setStatus("Код зчитано. Перевір студентку або прив’яжи код, потім вибери вхід чи вихід.");
+      const v = value.trim();
+      if (!v || pendingCode || busy) return;
+      busy = true;
       stopScanner();
+      openCabinet(v).finally(() => busy = false);
     }
-
     function useManualCode() {
-      const value = document.getElementById("manualCode").value.trim();
-
-      if (!value) {
-        setStatus("Спочатку введи тестовий код.");
-        return;
-      }
-
-      useCode(value);
+      const v = $("manualCode").value.trim();
+      if (!v) { setStatus("Спочатку введи серію і номер."); return; }
+      useCode(v);
+    }
+    async function openCabinet(code) {
+      setStatus("Перевіряємо код…");
+      const { data, error } = await sb.rpc("student_cabinet", { code });
+      if (error) { setStatus("Помилка зв’язку з базою. Спробуй ще раз."); return; }
+      if (!data) { setStatus("Цього студентського немає у списку. Зверніться до вихователя."); return; }
+      pendingCode = code;
+      renderCabinet(data);
+      setStatus("Код прийнято.");
+    }
+    function renderCabinet(d) {
+      $("loginBox").hidden = true; $("cabinet").hidden = false;
+      const s = d.student;
+      $("info").innerHTML = `<b>${esc(s.full_name)}</b><br>Група: ${esc(s.grp || "—")} · Кімната: ${esc(s.room || "—")}`;
+      $("myHistory").innerHTML = d.events.length
+        ? d.events.map(e => `<div class="event"><b>${esc(e.type)}</b><br><small>${fmt(e.at)}</small></div>`).join("")
+        : "<p>Записів поки немає.</p>";
+    }
+    async function mark(type) {
+      const { error } = await sb.rpc("student_mark", { code: pendingCode, kind: type });
+      if (error) { setStatus("Не вдалося зберегти запис."); return; }
+      setStatus(type + " зареєстровано ✔");
+      const { data } = await sb.rpc("student_cabinet", { code: pendingCode });
+      if (data) renderCabinet(data);
+    }
+    function closeCabinet() {
+      pendingCode = ""; $("cabinet").hidden = true; $("loginBox").hidden = false;
+      setStatus("Натисни кнопку вище, щоб почати.");
     }
 
+    /* ---------- СКАНЕР (без змін зі старої версії) ---------- */
     const barcodeFormats = [
       Html5QrcodeSupportedFormats.CODE_128,
       Html5QrcodeSupportedFormats.CODE_39,
@@ -412,119 +394,96 @@
       }
     }
 
-    function getHistory() {
-      try {
-        return JSON.parse(
-          localStorage.getItem("dormitoryHistory") || "[]"
-        );
-      } catch {
-        return [];
+
+    /* ---------- ПРОСТІР ВИХОВАТЕЛЯ ---------- */
+    async function staffLogin() {
+      const { error } = await sb.auth.signInWithPassword({ email: $("sEmail").value.trim(), password: $("sPass").value });
+      if (error) { $("sMsg").textContent = "Неправильна пошта або пароль."; return; }
+      staffInit();
+    }
+    async function staffInit() {
+      const { data: { session } } = await sb.auth.getSession();
+      if (!session) { $("staffLogin").hidden = false; $("staffPanel").hidden = true; return; }
+      const { data } = await sb.from("educators").select("user_id").maybeSingle();
+      if (!data) {
+        await sb.auth.signOut();
+        $("sMsg").textContent = "Цей акаунт не має прав вихователя.";
+        $("staffLogin").hidden = false; $("staffPanel").hidden = true; return;
       }
+      $("sMsg").textContent = ""; $("sPass").value = "";
+      $("staffLogin").hidden = true; $("staffPanel").hidden = false;
+      loadStudents(); loadEvents();
+    }
+    async function staffLogout() { await sb.auth.signOut(); staffInit(); }
+
+    async function loadStudents() {
+      const { data, error } = await sb.from("students").select("*").order("full_name");
+      if (error) { alert("Помилка: " + error.message); return; }
+      allStudents = data; renderStudents();
+    }
+    function renderStudents() {
+      const q = $("search").value.trim().toLowerCase();
+      const list = allStudents.filter(s => s.full_name.toLowerCase().includes(q));
+      $("studentList").innerHTML = list.map(s => `<div class="student"><b>${esc(s.full_name)}</b><br>
+        <small>Група: ${esc(s.group_name || "—")} · Кімната: ${esc(s.room_number || "—")} · Код: ${s.barcode_value || s.ticket_series || s.ticket_number ? "є" : "немає"}</small>
+        <div class="row"><button class="secondary" onclick="editStudent('${s.id}')">Редагувати</button><button class="exit" onclick="deleteStudent('${s.id}')">Видалити</button></div></div>`).join("") || "<p>Нікого не знайдено.</p>";
+    }
+    function editStudent(id) {
+      const s = allStudents.find(x => x.id === id);
+      $("fId").value = id; $("fName").value = s.full_name;
+      $("fGrp").value = s.group_name || ""; $("fRoom").value = s.room_number || "";
+      $("fBar").value = s.barcode_value || ""; $("fSerS").value = s.ticket_series || ""; $("fSerN").value = s.ticket_number || "";
+      $("formTitle").textContent = "Редагування студента";
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+    function clearForm() {
+      ["fId","fName","fGrp","fRoom","fBar","fSerS","fSerN"].forEach(i => $(i).value = "");
+      $("formTitle").textContent = "Додати студента";
+    }
+    async function saveStudent() {
+      const v = i => $(i).value.trim() || null;
+      const rec = { full_name: $("fName").value.trim(), group_name: v("fGrp"), room_number: v("fRoom"),
+        barcode_value: v("fBar"), ticket_series: v("fSerS"), ticket_number: v("fSerN") };
+      if (!rec.full_name) { alert("Вкажи прізвище та ім’я."); return; }
+      const id = $("fId").value;
+      const { error } = id ? await sb.from("students").update(rec).eq("id", id) : await sb.from("students").insert(rec);
+      if (error) { alert(error.code === "23505" ? "Такий код уже є в іншого студента." : "Помилка: " + error.message); return; }
+      clearForm(); loadStudents();
+    }
+    async function deleteStudent(id) {
+      if (!confirm("Видалити студента разом з усіма його записами?")) return;
+      const { error } = await sb.from("students").delete().eq("id", id);
+      if (error) alert("Помилка: " + error.message);
+      loadStudents(); loadEvents();
     }
 
-    function recordEvent(type) {
-      if (!pendingCode) {
-        setStatus("Спочатку відскануй студентський або введи серію та номер.");
-        return;
-      }
-
-      try {
-        const events = getHistory();
-        events.unshift({
-          code: pendingCode,
-          student: getStudentName(pendingCode),
-          type: type,
-          time: new Date().toLocaleString("uk-UA")
-        });
-
-        localStorage.setItem("dormitoryHistory", JSON.stringify(events));
-        showHistory();
-        setStatus("Подію «" + type + "» успішно записано в журнал.");
-
-        // Залишаємо зчитаний квиток активним, щоб можна було
-        // зареєструвати і вхід, і вихід без повторного сканування.
-      } catch (error) {
-        console.error("Помилка збереження події:", error);
-        setStatus("Не вдалося зберегти подію. Перевір, чи дозволене збереження даних у браузері.");
-      }
+    async function loadEvents() {
+      const days = { day: 1, week: 7, month: 30 }[$("period").value];
+      const since = new Date(); since.setHours(0, 0, 0, 0); since.setDate(since.getDate() - (days - 1));
+      const { data, error } = await sb.from("events").select("id,event_type,event_time,students(full_name,group_name,room_number)")
+        .gte("event_time", since.toISOString()).order("event_time", { ascending: false });
+      if (error) { alert("Помилка: " + error.message); return; }
+      allEvents = data;
+      $("eventList").innerHTML = data.map(e => `<div class="event"><b>${esc(e.students?.full_name)}</b> — ${esc(e.event_type)}<br>
+        <small>${fmt(e.event_time)}</small>
+        <div class="row"><button class="secondary" onclick="flipEvent('${e.id}','${e.event_type}')">Змінити тип</button><button class="exit" onclick="deleteEvent('${e.id}')">Видалити</button></div></div>`).join("") || "<p>За цей період записів немає.</p>";
     }
-
-    function resetCurrentCode() {
-      pendingCode = "";
-      document.getElementById("code").textContent = "Ще не зчитано";
-      document.getElementById("studentName").textContent = "Не визначено";
-      document.getElementById("manualCode").value = "";
-      setStatus("Поточний квиток очищено. Можна сканувати наступний.");
+    async function flipEvent(id, type) {
+      await sb.from("events").update({ event_type: type === "Вхід" ? "Вихід" : "Вхід" }).eq("id", id); loadEvents();
     }
-
-    function showHistory() {
-      const history = getHistory();
-      const container = document.getElementById("history");
-
-      container.replaceChildren();
-
-      if (history.length === 0) {
-        container.textContent = "Записів поки немає.";
-        return;
-      }
-
-      history.forEach(event => {
-        const row = document.createElement("div");
-        row.className = "event";
-
-        const title = document.createElement("b");
-        title.textContent = event.type + " — " + (event.student || "Студентка не визначена") + " (" + event.code + ")";
-
-        const date = document.createElement("div");
-        date.textContent = event.time;
-
-        row.append(title, date);
-        container.appendChild(row);
-      });
+    async function deleteEvent(id) {
+      if (!confirm("Видалити цей запис?")) return;
+      await sb.from("events").delete().eq("id", id); loadEvents();
     }
-
     function exportCSV() {
-      const history = getHistory();
-
-      if (!history.length) {
-        setStatus("Журнал порожній.");
-        return;
-      }
-
-      const rows = [
-        ["Дата і час", "Студентка", "Код квитка", "Подія"],
-        ...history.map(e => [e.time, e.student || "Не визначено", e.code, e.type])
-      ];
-
-      const csv = "\uFEFF" + rows.map(row =>
-        row.map(value =>
-          '"' + String(value).replace(/"/g, '""') + '"'
-        ).join(";")
-      ).join("\r\n");
-
-      const blob = new Blob([csv], {
-        type: "text/csv;charset=utf-8;"
-      });
-
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = "zhurnal_gurtozhytku.csv";
-      link.click();
-
-      setTimeout(() => URL.revokeObjectURL(url), 2000);
+      if (!allEvents.length) { alert("Журнал порожній."); return; }
+      const rows = [["Дата і час", "Студент", "Група", "Кімната", "Подія"],
+        ...allEvents.map(e => [fmt(e.event_time), e.students?.full_name || "", e.students?.group_name || "", e.students?.room_number || "", e.event_type])];
+      const csv = "\uFEFF" + rows.map(r => r.map(v => '"' + String(v).replace(/"/g, '""') + '"').join(";")).join("\r\n");
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8;" }));
+      a.download = "zhurnal_gurtozhytku.csv"; a.click();
     }
-
-    function clearHistory() {
-      if (!confirm("Видалити весь тестовий журнал?")) return;
-
-      localStorage.removeItem("dormitoryHistory");
-      showHistory();
-      setStatus("Тестовий журнал очищено.");
-    }
-
-    showHistory();
-    renderStudents();
   </script>
 </body>
 </html>
