@@ -46,8 +46,8 @@
       overflow-wrap: anywhere;
     }
 
-    #reader { width: 100%; margin: 10px 0; overflow: hidden; border-radius: 10px; }
-    #reader video { width: 100% !important; border-radius: 10px; }
+    #reader, #readerStaff { width: 100%; margin: 10px 0; overflow: hidden; border-radius: 10px; }
+    #reader video, #readerStaff video { width: 100% !important; border-radius: 10px; }
     .upload-label {
       display: block;
       box-sizing: border-box;
@@ -131,6 +131,11 @@
         <input id="fGrp" placeholder="Група">
         <input id="fRoom" placeholder="Кімната">
         <input id="fBar" placeholder="Штрихкод студентського">
+        <div id="readerStaff"></div>
+        <p id="sStatus" class="hint"></p>
+        <div class="row"><button class="secondary" onclick="startScanner()">Сканувати камерою</button><button class="secondary" onclick="stopScanner()">Зупинити камеру</button></div>
+        <label class="upload-label" for="ticketPhotoS">Завантажити фото штрихкоду</label>
+        <input id="ticketPhotoS" type="file" accept="image/*" capture="environment" onchange="scanPhoto(this)" style="display:none">
         <input id="fSerS" placeholder="Серія студентського (наприклад, КВ)">
         <input id="fSerN" placeholder="Номер студентського (наприклад, 123456)">
         <div class="row"><button onclick="saveStudent()">Зберегти</button><button class="secondary" onclick="clearForm()">Очистити</button></div>
@@ -156,25 +161,33 @@
     const SUPABASE_KEY = "sb_publishable_DBkfYvnTUBuypfcmg8Qjlw_bg1E4KNa";
     const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-    let scanner = null, pendingCode = "", busy = false;
+    let scanner = null, pendingCode = "", busy = false, scanTarget = "student";
     let allStudents = [], allEvents = [];
     const $ = id => document.getElementById(id);
     const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
     const fmt = d => new Date(d).toLocaleString("uk-UA");
     const norm = v => (v || "").replace(/\s/g, "").toUpperCase();
-    function setStatus(m) { $("status").textContent = m; }
+    function setStatus(m) { $(scanTarget === "staff" ? "sStatus" : "status").textContent = m; }
 
     function showTab(t) {
       $("studentView").hidden = t !== "student";
       $("staffView").hidden = t !== "staff";
       $("tabS").classList.toggle("active", t === "student");
       $("tabT").classList.toggle("active", t === "staff");
-      if (t === "staff") staffInit(); else stopScanner();
+      scanTarget = t === "staff" ? "staff" : "student";
+      stopScanner();
+      if (t === "staff") staffInit();
     }
 
     /* ---------- ПРОСТІР СТУДЕНТА ---------- */
     function useCode(value) {
       const v = value.trim();
+      if (scanTarget === "staff") {
+        if (!v) return;
+        $("fBar").value = v; stopScanner();
+        setStatus("Штрихкод зчитано: " + v + ". Натисни «Зберегти», щоб додати його студенту.");
+        return;
+      }
       if (!v || pendingCode || busy) return;
       busy = true;
       stopScanner();
@@ -228,7 +241,7 @@
     ];
 
     async function startScanner() {
-      if (scanner || pendingCode) {
+      if (scanner || (scanTarget !== "staff" && pendingCode)) {
         setStatus("Спочатку заверши поточну операцію або зупини камеру.");
         return;
       }
@@ -238,7 +251,7 @@
       }
 
       setStatus("Запитуємо дозвіл на камеру…");
-      scanner = new Html5Qrcode("reader", {
+      scanner = new Html5Qrcode(scanTarget === "staff" ? "readerStaff" : "reader", {
         formatsToSupport: barcodeFormats,
         verbose: false
       });
@@ -274,7 +287,7 @@
       const file = input.files && input.files[0];
       if (!file) return;
 
-      if (pendingCode) {
+      if (scanTarget !== "staff" && pendingCode) {
         setStatus("Спочатку заверши поточну операцію входу або виходу.");
         input.value = "";
         return;
@@ -295,7 +308,7 @@
         return;
       }
 
-      const reader = new Html5Qrcode("reader", {
+      const reader = new Html5Qrcode(scanTarget === "staff" ? "readerStaff" : "reader", {
         formatsToSupport: barcodeFormats,
         verbose: false
       });
@@ -439,6 +452,7 @@
     function clearForm() {
       ["fId","fName","fGrp","fRoom","fBar","fSerS","fSerN"].forEach(i => $(i).value = "");
       $("formTitle").textContent = "Додати студента";
+      stopScanner(); $("sStatus").textContent = "";
     }
     async function saveStudent() {
       const v = i => $(i).value.trim() || null;
